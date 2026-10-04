@@ -26,14 +26,25 @@ import (
 
 // AppReleaseSpec defines the desired state of AppRelease
 type AppReleaseSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// AppName is the stable identity of the marketplace application (e.g. "streaming-film").
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	AppName string `json:"appName"`
 
-	// foo is an example field of AppRelease. Edit apprelease_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// Version is the desired version to run. Upgrading means changing this field.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^v?[0-9]+\.[0-9]+\.[0-9]+$`
+	Version string `json:"version"`
+
+	// Source is the S3 location of the Helm chart archive.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^s3://[a-z0-9.-]+/[a-zA-Z0-9._/-]+$`
+	Source string `json:"source"`
+
+	// Digest is the sha256 checksum of the chart archive, used to verify integrity after transfer.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
+	Digest string `json:"digest"`
 }
 
 // AppReleaseStatus defines the observed state of AppRelease.
@@ -57,6 +68,10 @@ type AppReleaseStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// InstalledVersion is the version currently running on the aircraft.
+	// +optional
+	InstalledVersion string `json:"installedVersion,omitempty"`
 }
 
 // +kubebuilder:object:root=true
