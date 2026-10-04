@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - marketplace.edge-ops.dev
+  resources:
+  - appreleases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - marketplace.edge-ops.dev
+  resources:
+  - appreleases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - marketplace.edge-ops.dev
+  resources:
+  - appreleases/status
+  verbs:
+  - get
+  - patch
+  - update
