@@ -47,9 +47,23 @@ type AppReleaseReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
 func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	ar := &marketplacev1alpha1.AppRelease{}
+	if err := r.Get(ctx, req.NamespacedName, ar); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			log.Info("AppRelease deleted, nothing to do", "name", req.Name)
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	if ar.Status.InstalledVersion != ar.Spec.Version {
+		log.Info("Drift detected", "app", ar.Spec.AppName,
+			"desired", ar.Spec.Version, "installed", ar.Status.InstalledVersion)
+	} else {
+		log.Info("No drift, skipping", "app", ar.Spec.AppName, "version", ar.Spec.Version)
+	}
 
 	return ctrl.Result{}, nil
 }
