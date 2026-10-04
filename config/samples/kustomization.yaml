@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- marketplace_v1alpha1_apprelease.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
