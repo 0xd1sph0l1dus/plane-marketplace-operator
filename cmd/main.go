@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -37,7 +38,10 @@ import (
 
 	marketplacev1alpha1 "github.com/0xd1sph0l1dus/airbus-marketplace-operator/api/v1alpha1"
 	"github.com/0xd1sph0l1dus/airbus-marketplace-operator/internal/controller"
+
 	// +kubebuilder:scaffold:imports
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 var (
@@ -182,9 +186,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		setupLog.Error(err, "unable to load AWS config")
+		os.Exit(1)
+	}
+
 	if err := (&controller.AppReleaseReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		S3Client:    s3.NewFromConfig(awsCfg),
+		ArtifactDir: "/tmp/marketplace-artifacts",
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "apprelease")
 		os.Exit(1)

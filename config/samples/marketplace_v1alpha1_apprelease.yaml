@@ -9,5 +9,5 @@ metadata:
 spec:
   appName: streaming-film
   version: "2.4.0"
-  source: s3://airbus-marketplace/charts/streaming-film-2.4.0.tgz
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  source: s3://marketplace-artifacts-383025814770/demo-app-0.1.0.tgz
+  digest: sha256:e41bd4e629a37c79cfb90a9d5622233ab35f9fa23751297dfdf71cabaef16c27
