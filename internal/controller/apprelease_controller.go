@@ -31,6 +31,7 @@ import (
 )
 
 const marketplaceFinalizer = "marketplace.edge-ops.dev/finalizer"
+const conditionReady = "Ready"
 
 // AppReleaseReconciler reconciles a AppRelease object
 type AppReleaseReconciler struct {
@@ -93,7 +94,7 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// 2. Pas d'écart désiré/réel ? Rien à faire (idempotence)
 	if ar.Status.InstalledVersion == ar.Spec.Version {
 		meta.SetStatusCondition(&ar.Status.Conditions, metav1.Condition{
-			Type:    "Ready",
+			Type:    conditionReady,
 			Status:  metav1.ConditionTrue,
 			Reason:  "UpToDate",
 			Message: fmt.Sprintf("Version %s is installed", ar.Spec.Version),
@@ -109,7 +110,7 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// 3. Annoncer le travail en cours (le cloud verra Progressing)
 	meta.SetStatusCondition(&ar.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
+		Type:    conditionReady,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Progressing",
 		Message: fmt.Sprintf("Installing version %s", ar.Spec.Version),
@@ -141,7 +142,7 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// 7. La boucle se ferme : le réel rejoint le désiré
 	ar.Status.InstalledVersion = ar.Spec.Version
 	meta.SetStatusCondition(&ar.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
+		Type:    conditionReady,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Installed",
 		Message: fmt.Sprintf("Version %s installed successfully", ar.Spec.Version),
@@ -164,7 +165,7 @@ func (r *AppReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // markFailed écrit une condition d'échec sans bloquer la boucle
 func (r *AppReleaseReconciler) markFailed(ctx context.Context, ar *marketplacev1alpha1.AppRelease, reason, msg string) {
 	meta.SetStatusCondition(&ar.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
+		Type:    conditionReady,
 		Status:  metav1.ConditionFalse,
 		Reason:  reason,
 		Message: msg,
@@ -190,7 +191,7 @@ func (r *AppReleaseReconciler) download(ctx context.Context, source string) (str
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	resp, err := r.S3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
@@ -199,7 +200,7 @@ func (r *AppReleaseReconciler) download(ctx context.Context, source string) (str
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return "", err
@@ -225,7 +226,7 @@ func (r *AppReleaseReconciler) installChart(chartPath, releaseName, namespace st
 	settings := cli.New()
 	settings.SetNamespace(namespace)
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...any) {
 		fmt.Printf("helm: "+format+"\n", v...)
 	}); err != nil {
 		return err
@@ -263,7 +264,7 @@ func (r *AppReleaseReconciler) uninstallChart(releaseName, namespace string) err
 	settings := cli.New()
 	settings.SetNamespace(namespace)
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...any) {
 		fmt.Printf("helm: "+format+"\n", v...)
 	}); err != nil {
 		return err

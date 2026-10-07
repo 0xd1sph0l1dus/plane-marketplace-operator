@@ -36,6 +36,11 @@ import (
 var _ = Describe("AppRelease Controller", func() {
 	// Reconciler "hors-ligne" : S3 pointé sur un port fermé (127.0.0.1:1) →
 	// échec immédiat et déterministe, sans réseau ni credentials.
+	const (
+		testNamespace     = "default"
+		noDriftName       = "no-drift"
+		driftResourceName = "drift-unreachable"
+	)
 	newReconciler := func() *AppReleaseReconciler {
 		return &AppReleaseReconciler{
 			Client: k8sClient,
@@ -50,9 +55,9 @@ var _ = Describe("AppRelease Controller", func() {
 
 	It("does nothing when the desired version is already installed", func() {
 		ar := &marketplacev1alpha1.AppRelease{
-			ObjectMeta: metav1.ObjectMeta{Name: "no-drift", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: noDriftName, Namespace: testNamespace},
 			Spec: marketplacev1alpha1.AppReleaseSpec{
-				AppName: "no-drift",
+				AppName: noDriftName,
 				Version: "1.0.0",
 				Source:  "s3://bucket/chart.tgz",
 				Digest:  "sha256:" + strings.Repeat("0", 64),
@@ -64,12 +69,12 @@ var _ = Describe("AppRelease Controller", func() {
 		Expect(k8sClient.Status().Update(ctx, ar)).To(Succeed())
 
 		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{Namespace: "default", Name: "no-drift"},
+			NamespacedName: types.NamespacedName{Namespace: testNamespace, Name: noDriftName},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
 		updated := &marketplacev1alpha1.AppRelease{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "no-drift"}, updated)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: noDriftName}, updated)).To(Succeed())
 		cond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
@@ -78,9 +83,9 @@ var _ = Describe("AppRelease Controller", func() {
 
 	It("marks DownloadError when there is drift but the artifact is unreachable", func() {
 		ar := &marketplacev1alpha1.AppRelease{
-			ObjectMeta: metav1.ObjectMeta{Name: "drift-unreachable", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: driftResourceName, Namespace: testNamespace},
 			Spec: marketplacev1alpha1.AppReleaseSpec{
-				AppName: "drift-unreachable",
+				AppName: driftResourceName,
 				Version: "2.0.0",
 				Source:  "s3://bucket/chart.tgz",
 				Digest:  "sha256:" + strings.Repeat("0", 64),
@@ -89,12 +94,12 @@ var _ = Describe("AppRelease Controller", func() {
 		Expect(k8sClient.Create(ctx, ar)).To(Succeed())
 
 		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{Namespace: "default", Name: "drift-unreachable"},
+			NamespacedName: types.NamespacedName{Namespace: testNamespace, Name: driftResourceName},
 		})
 		Expect(err).To(HaveOccurred()) // erreur transitoire : le framework réessaierait avec backoff
 
 		updated := &marketplacev1alpha1.AppRelease{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "drift-unreachable"}, updated)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: driftResourceName}, updated)).To(Succeed())
 		cond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
