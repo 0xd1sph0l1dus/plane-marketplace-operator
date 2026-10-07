@@ -53,9 +53,9 @@ resource "aws_iam_user_policy" "edge_operator" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "ReadArtifacts"
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Sid    = "ReadArtifacts"
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
         Resource = [
           aws_s3_bucket.artifacts.arn,
           "${aws_s3_bucket.artifacts.arn}/*"
