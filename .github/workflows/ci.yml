@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (Go + Helm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+      - name: Helm lint
+        run: helm lint charts/demo-app
+
+  test:
+    name: Tests (envtest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Run unit tests (envtest télécharge kube-apiserver/etcd)
+        run: make test
+
+  build:
+    name: Build (Go + Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Go build
+        run: go build ./...
+      - name: Docker build (multi-stage)
+        run: docker build -t plane-marketplace-operator:ci .
+
+  terraform:
+    name: Terraform (fmt + validate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+      - name: Terraform fmt
+        run: terraform fmt -check -diff
+      - name: Terraform init (sans backend = pas de credentials AWS en CI)
+        run: terraform init -backend=false
+      - name: Terraform validate
+        run: terraform validate
