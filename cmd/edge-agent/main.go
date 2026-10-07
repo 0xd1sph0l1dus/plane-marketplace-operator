@@ -187,12 +187,9 @@ func readyState(ar *marketplacev1alpha1.AppRelease) (bool, string) {
 	return false, "Unknown"
 }
 
-// sleepBackoff : exponentiel (1s→60s) + jitter pour éviter la synchronisation des retries
+// sleepBackoff : exponential (1s→60s) + jitter pour éviter la synchronisation des retries
 func sleepBackoff(attempt int) {
-	d := time.Duration(math.Pow(2, float64(attempt))) * time.Second
-	if d > 60*time.Second {
-		d = 60 * time.Second
-	}
+	d := min(time.Duration(math.Pow(2, float64(attempt)))*time.Second, 60*time.Second)
 	jitter := time.Duration(rand.Int63n(int64(d/2) + 1))
 	time.Sleep(d + jitter)
 }
