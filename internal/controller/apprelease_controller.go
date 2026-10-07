@@ -24,10 +24,13 @@ import (
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	marketplacev1alpha1 "github.com/0xd1sph0l1dus/plane-marketplace-operator/api/v1alpha1"
 )
+
+const marketplaceFinalizer = "marketplace.edge-ops.dev/finalizer"
 
 // AppReleaseReconciler reconciles a AppRelease object
 type AppReleaseReconciler struct {
@@ -61,6 +64,30 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
+	}
+
+	// Désinstallation : CR marqué pour suppression → nettoyer le release Helm
+	if !ar.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(ar, marketplaceFinalizer) {
+			log.Info("CR is being deleted, uninstalling Helm release", "app", ar.Spec.AppName)
+			if err := r.uninstallChart(ar.Spec.AppName, "marketplace"); err != nil {
+				return ctrl.Result{}, fmt.Errorf("uninstall chart: %w", err)
+			}
+			controllerutil.RemoveFinalizer(ar, marketplaceFinalizer)
+			if err := r.Update(ctx, ar); err != nil {
+				return ctrl.Result{}, err
+			}
+			log.Info("App uninstalled", "app", ar.Spec.AppName)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// À la création : poser le finalizer pour garantir la désinstallation future
+	if !controllerutil.ContainsFinalizer(ar, marketplaceFinalizer) {
+		controllerutil.AddFinalizer(ar, marketplaceFinalizer)
+		if err := r.Update(ctx, ar); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// 2. Pas d'écart désiré/réel ? Rien à faire (idempotence)
@@ -230,6 +257,26 @@ func (r *AppReleaseReconciler) installChart(chartPath, releaseName, namespace st
 	upg.Timeout = 5 * time.Minute
 	_, err = upg.Run(releaseName, ch, nil)
 	return err
+}
+
+func (r *AppReleaseReconciler) uninstallChart(releaseName, namespace string) error {
+	settings := cli.New()
+	settings.SetNamespace(namespace)
+	actionConfig := new(action.Configuration)
+	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+		fmt.Printf("helm: "+format+"\n", v...)
+	}); err != nil {
+		return err
+	}
+
+	uninstall := action.NewUninstall(actionConfig)
+	uninstall.Wait = true
+	uninstall.Timeout = 5 * time.Minute
+	_, err := uninstall.Run(releaseName)
+	if err != nil && !errors.Is(err, driver.ErrReleaseNotFound) {
+		return err
+	}
+	return nil
 }
 
 func (r *AppReleaseReconciler) updateStatus(ctx context.Context, ar *marketplacev1alpha1.AppRelease) error {

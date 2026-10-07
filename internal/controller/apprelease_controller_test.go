@@ -17,71 +17,87 @@ limitations under the License.
 package controller
 
 import (
-	"context"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	marketplacev1alpha1 "github.com/0xd1sph0l1dus/plane-marketplace-operator/api/v1alpha1"
 )
 
 var _ = Describe("AppRelease Controller", func() {
-	Context("When reconciling a resource", func() {
-		const (
-			resourceName      = "test-resource"
-			resourceNamespace = "default"
-		)
-
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: resourceNamespace,
+	// Reconciler "hors-ligne" : S3 pointé sur un port fermé (127.0.0.1:1) →
+	// échec immédiat et déterministe, sans réseau ni credentials.
+	newReconciler := func() *AppReleaseReconciler {
+		return &AppReleaseReconciler{
+			Client: k8sClient,
+			Scheme: scheme.Scheme,
+			S3Client: s3.New(s3.Options{
+				Region:       "us-east-1",
+				BaseEndpoint: aws.String("http://127.0.0.1:1"),
+			}),
+			ArtifactDir: GinkgoT().TempDir(),
 		}
-		apprelease := &marketplacev1alpha1.AppRelease{}
+	}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind AppRelease")
-			err := k8sClient.Get(ctx, typeNamespacedName, apprelease)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &marketplacev1alpha1.AppRelease{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: resourceNamespace,
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+	It("does nothing when the desired version is already installed", func() {
+		ar := &marketplacev1alpha1.AppRelease{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-drift", Namespace: "default"},
+			Spec: marketplacev1alpha1.AppReleaseSpec{
+				AppName: "no-drift",
+				Version: "1.0.0",
+				Source:  "s3://bucket/chart.tgz",
+				Digest:  "sha256:" + strings.Repeat("0", 64),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ar)).To(Succeed())
+
+		ar.Status.InstalledVersion = "1.0.0"
+		Expect(k8sClient.Status().Update(ctx, ar)).To(Succeed())
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: "default", Name: "no-drift"},
 		})
+		Expect(err).NotTo(HaveOccurred())
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &marketplacev1alpha1.AppRelease{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+		updated := &marketplacev1alpha1.AppRelease{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "no-drift"}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal("UpToDate"))
+	})
 
-			By("Cleanup the specific resource instance AppRelease")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+	It("marks DownloadError when there is drift but the artifact is unreachable", func() {
+		ar := &marketplacev1alpha1.AppRelease{
+			ObjectMeta: metav1.ObjectMeta{Name: "drift-unreachable", Namespace: "default"},
+			Spec: marketplacev1alpha1.AppReleaseSpec{
+				AppName: "drift-unreachable",
+				Version: "2.0.0",
+				Source:  "s3://bucket/chart.tgz",
+				Digest:  "sha256:" + strings.Repeat("0", 64),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ar)).To(Succeed())
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: "default", Name: "drift-unreachable"},
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &AppReleaseReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+		Expect(err).To(HaveOccurred()) // erreur transitoire : le framework réessaierait avec backoff
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		updated := &marketplacev1alpha1.AppRelease{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "drift-unreachable"}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal("DownloadError"))
 	})
 })

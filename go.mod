@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.52.1
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.40.0
 	helm.sh/helm/v3 v3.22.0
@@ -38,7 +39,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.52.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.1 // indirect
