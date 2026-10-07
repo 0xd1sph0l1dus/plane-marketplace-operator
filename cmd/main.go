@@ -36,8 +36,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	marketplacev1alpha1 "github.com/0xd1sph0l1dus/airbus-marketplace-operator/api/v1alpha1"
-	"github.com/0xd1sph0l1dus/airbus-marketplace-operator/internal/controller"
+	marketplacev1alpha1 "github.com/0xd1sph0l1dus/plane-marketplace-operator/api/v1alpha1"
+	"github.com/0xd1sph0l1dus/plane-marketplace-operator/internal/controller"
 
 	// +kubebuilder:scaffold:imports
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"

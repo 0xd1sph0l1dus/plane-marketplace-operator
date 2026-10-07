@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	marketplacev1alpha1 "github.com/0xd1sph0l1dus/airbus-marketplace-operator/api/v1alpha1"
+	marketplacev1alpha1 "github.com/0xd1sph0l1dus/plane-marketplace-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/0xd1sph0l1dus/airbus-marketplace-operator/test/utils"
+	"github.com/0xd1sph0l1dus/plane-marketplace-operator/test/utils"
 )
 
 var (

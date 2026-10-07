@@ -1,4 +1,4 @@
-# airbus-marketplace-operator
+# plane-marketplace-operator
 
 A Kubernetes operator (Go) that manages the lifecycle of marketplace applications
 on an **edge fleet** — e.g. aircraft with intermittent connectivity — and keeps

@@ -1,4 +1,4 @@
-# airbus-marketplace-operator - AI Agent Guide
+# plane-marketplace-operator - AI Agent Guide
 
 ## Project Structure
 

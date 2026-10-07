@@ -24,7 +24,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	marketplacev1alpha1 "github.com/0xd1sph0l1dus/airbus-marketplace-operator/api/v1alpha1"
+	marketplacev1alpha1 "github.com/0xd1sph0l1dus/plane-marketplace-operator/api/v1alpha1"
 )
 
 type desiredMessage struct {

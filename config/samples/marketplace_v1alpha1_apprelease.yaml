@@ -3,7 +3,7 @@ apiVersion: marketplace.edge-ops.dev/v1alpha1
 kind: AppRelease
 metadata:
   labels:
-    app.kubernetes.io/name: airbus-marketplace-operator
+    app.kubernetes.io/name: plane-marketplace-operator
     app.kubernetes.io/managed-by: kustomize
   name: streaming-film
 spec:
