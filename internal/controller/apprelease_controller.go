@@ -102,6 +102,7 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err := r.updateStatus(ctx, ar); err != nil {
 			return ctrl.Result{}, err
 		}
+		ReconcileTotal.WithLabelValues(ar.Spec.AppName, "noop").Inc()
 		return ctrl.Result{}, nil
 	}
 
@@ -123,19 +124,26 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	chartPath, err := r.download(ctx, ar.Spec.Source)
 	if err != nil {
 		r.markFailed(ctx, ar, "DownloadError", err.Error())
-		return ctrl.Result{}, err // erreur transitoire → controller-runtime réessaiera avec backoff
+		ReconcileTotal.WithLabelValues(ar.Spec.AppName, "download_error").Inc()
+		return ctrl.Result{}, err
 	}
 
 	// 5. Vérifier l'intégrité — si le sha256 ne matche pas, on s'arrête
 	if err := r.verifyDigest(chartPath, ar.Spec.Digest); err != nil {
-		_ = os.Remove(chartPath) // on jette le fichier corrompu
+		_ = os.Remove(chartPath)
 		r.markFailed(ctx, ar, "DigestMismatch", err.Error())
-		return ctrl.Result{}, nil // erreur permanente : retenter ne servirait à rien
+		DigestMismatchTotal.WithLabelValues(ar.Spec.AppName).Inc()
+		ReconcileTotal.WithLabelValues(ar.Spec.AppName, "digest_mismatch").Inc()
+		return ctrl.Result{}, nil
 	}
 
 	// 6. Installer (ou mettre à jour) via Helm — Atomic = rollback auto si échec
-	if err := r.installChart(chartPath, ar.Spec.AppName, "marketplace"); err != nil {
+	start := time.Now()
+	err = r.installChart(chartPath, ar.Spec.AppName, "marketplace")
+	InstallDuration.WithLabelValues(ar.Spec.AppName).Observe(time.Since(start).Seconds())
+	if err != nil {
 		r.markFailed(ctx, ar, "InstallError", err.Error())
+		ReconcileTotal.WithLabelValues(ar.Spec.AppName, "install_error").Inc()
 		return ctrl.Result{}, err
 	}
 
@@ -151,6 +159,7 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 	log.Info("Install complete", "app", ar.Spec.AppName, "version", ar.Spec.Version)
+	ReconcileTotal.WithLabelValues(ar.Spec.AppName, "installed").Inc()
 	return ctrl.Result{}, nil
 }
 

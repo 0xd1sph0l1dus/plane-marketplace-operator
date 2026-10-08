@@ -12,6 +12,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -26,6 +30,18 @@ import (
 
 	marketplacev1alpha1 "github.com/0xd1sph0l1dus/plane-marketplace-operator/api/v1alpha1"
 )
+
+var messagesProcessed = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "edge_agent_sqs_messages_total",
+		Help: "SQS messages handled by the edge agent, by queue and result",
+	},
+	[]string{"queue", "result"},
+)
+
+func init() {
+	prometheus.MustRegister(messagesProcessed)
+}
 
 type desiredMessage struct {
 	APIVersion string `json:"apiVersion"`
@@ -63,6 +79,7 @@ func receiveLoop(ctx context.Context, c *sqs.Client, k8s client.Client, queueURL
 		})
 		if err != nil {
 			log.Printf("receive failed (attempt %d): %v", attempt, err)
+			messagesProcessed.WithLabelValues("desired", "receive_error").Inc()
 			sleepBackoff(attempt)
 			attempt++
 			continue
@@ -70,16 +87,18 @@ func receiveLoop(ctx context.Context, c *sqs.Client, k8s client.Client, queueURL
 		attempt = 0 // le lien est OK → reset du backoff
 
 		for _, msg := range out.Messages {
-			if err := handleDesired(ctx, k8s, aircraft, msg.Body); err != nil {
-				log.Printf("handle desired failed: %v (message left in queue, will be redelivered)", err)
-				continue // pas de DeleteMessage → SQS redélivrera (at-least-once)
-			}
-			if _, err := c.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-				QueueUrl:      aws.String(queueURL),
-				ReceiptHandle: msg.ReceiptHandle,
-			}); err != nil {
-				log.Printf("delete failed: %v", err)
-			}
+				if err := handleDesired(ctx, k8s, aircraft, msg.Body); err != nil {
+					messagesProcessed.WithLabelValues("desired", "error").Inc()
+					log.Printf("handle desired failed: %v (message left in queue, will be redelivered)", err)
+					continue
+				}
+				messagesProcessed.WithLabelValues("desired", "processed").Inc()
+				if _, err := c.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+					QueueUrl:      aws.String(queueURL),
+					ReceiptHandle: msg.ReceiptHandle,
+				}); err != nil {
+					log.Printf("delete failed: %v", err)
+				}
 		}
 	}
 }
@@ -167,10 +186,12 @@ func pushStatuses(ctx context.Context, c *sqs.Client, k8s client.Client, queueUR
 		if _, err := c.SendMessage(ctx, &sqs.SendMessageInput{
 			QueueUrl:       aws.String(queueURL),
 			MessageBody:    aws.String(string(body)),
-			MessageGroupId: aws.String(aircraft), // une file logique par avion
+			MessageGroupId: aws.String(aircraft),
 		}); err != nil {
+			messagesProcessed.WithLabelValues("status", "send_error").Inc()
 			return err
 		}
+		messagesProcessed.WithLabelValues("status", "sent").Inc()
 	}
 	if len(list.Items) > 0 {
 		log.Printf("pushed %d status(es)", len(list.Items))
@@ -208,7 +229,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Client Kubernetes : même API que l'opérateur, mais sans manager (un client nu suffit)
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	metricsSrv := &http.Server{Addr: ":9099", Handler: mux}
+	go func() {
+		log.Printf("metrics server listening on :9099")
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("metrics server: %v", err)
+		}
+	}()
+
 	restCfg := ctrl.GetConfigOrDie()
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
@@ -218,7 +249,6 @@ func main() {
 		log.Fatalf("k8s client: %v", err)
 	}
 
-	// Client SQS : même chaîne de credentials que l'opérateur (clés edge)
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("aws config: %v", err)
@@ -235,5 +265,8 @@ func main() {
 	<-ctx.Done()
 	log.Println("shutdown signal received, waiting for loops...")
 	wg.Wait()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = metricsSrv.Shutdown(shutdownCtx)
 	log.Println("edge-agent stopped")
 }
